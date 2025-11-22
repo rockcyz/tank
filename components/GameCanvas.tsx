@@ -1151,7 +1151,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // 2. Shooting
     if (player.cooldown > 0) player.cooldown--;
     
-    const isShooting = state.mouse.down || state.keys.Space || joystickRef.current.isFiring;
+    // AUTO FIRE if aim joystick is active
+    const isShooting = state.mouse.down || state.keys.Space || joystickRef.current.isFiring || joystickRef.current.aim.active;
 
     if (isShooting && player.cooldown <= 0) {
        const config = WEAPON_CONFIG[player.weapon];
@@ -1695,9 +1696,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       
       {/* Mobile Virtual Controls Layer (Visible on touch screens/smaller screens) */}
       <div className="absolute inset-0 pointer-events-none lg:hidden">
-          {/* Left Joystick Zone (Movement) */}
+          {/* Left Joystick Zone (Movement) - BOTTOM LEFT */}
           <div 
-            className="absolute bottom-8 left-8 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
+            className="absolute bottom-6 left-6 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
             onTouchStart={(e) => handleTouchStart(e, 'move')}
             onTouchMove={(e) => handleTouchMove(e, 'move')}
             onTouchEnd={(e) => handleTouchEnd(e, 'move')}
@@ -1711,16 +1712,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               ></div>
           </div>
 
-           {/* Right Joystick Zone (Aim) */}
+           {/* Right Joystick Zone (Aim & Fire) - BOTTOM RIGHT */}
            <div 
-            className="absolute bottom-8 right-32 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
+            className="absolute bottom-6 right-6 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
             onTouchStart={(e) => handleTouchStart(e, 'aim')}
             onTouchMove={(e) => handleTouchMove(e, 'aim')}
             onTouchEnd={(e) => handleTouchEnd(e, 'aim')}
           >
               <Crosshair className="absolute text-white/30 w-16 h-16" />
+              {/* Inner Knob is Red to indicate Firing */}
               <div 
-                className="w-12 h-12 rounded-full bg-red-500/50 shadow-lg z-10"
+                className={`w-12 h-12 rounded-full shadow-lg z-10 border-2 border-white/30 ${joystickRef.current.aim.active ? 'bg-red-500 animate-pulse' : 'bg-red-600/80'}`}
                 style={{ 
                     transform: `translate(${joystickRef.current.aim.currentX - joystickRef.current.aim.originX}px, ${joystickRef.current.aim.currentY - joystickRef.current.aim.originY}px)`,
                     transition: joystickRef.current.aim.active ? 'none' : 'transform 0.1s ease-out'
@@ -1728,19 +1730,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               ></div>
           </div>
 
-          {/* Fire Button - Bottom Right Corner */}
-          <div className="absolute bottom-10 right-4 pointer-events-auto">
-               <button 
-                 className={`w-20 h-20 rounded-full border-4 shadow-lg transition-transform active:scale-90 flex items-center justify-center ${joystickRef.current.isFiring ? 'bg-red-500 border-red-300' : 'bg-red-600/80 border-red-400'}`}
-                 onTouchStart={(e) => { e.preventDefault(); joystickRef.current.isFiring = true; }}
-                 onTouchEnd={(e) => { e.preventDefault(); joystickRef.current.isFiring = false; }}
-               >
-                   <div className="w-12 h-12 rounded-full bg-white/20"></div>
-               </button>
-          </div>
-
-          {/* Venom Button - Above Fire Button */}
-          <div className="absolute bottom-36 right-6 pointer-events-auto">
+          {/* Venom Button - Raised Higher */}
+          <div className="absolute bottom-44 right-6 pointer-events-auto">
                <button 
                  className={`w-16 h-16 rounded-full border-2 shadow-lg transition-transform active:scale-90 flex items-center justify-center ${venomStatus.active ? 'bg-[#39FF14] border-white animate-pulse' : (venomStatus.cooldown > 0 ? 'bg-gray-600 border-gray-500 opacity-50' : 'bg-green-700/80 border-green-500')}`}
                  onTouchStart={(e) => { e.preventDefault(); activateVenom(); }}
@@ -1749,8 +1740,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                </button>
           </div>
 
-          {/* Shockwave Button - Above Left Joystick */}
-          <div className="absolute bottom-40 left-10 pointer-events-auto">
+          {/* Shockwave Button - Raised Higher Left */}
+          <div className="absolute bottom-44 left-6 pointer-events-auto">
              <button 
                 onClick={triggerShockwave}
                 disabled={shockwaves <= 0 || isPaused}
