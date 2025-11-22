@@ -1,9 +1,8 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { MAP_WIDTH, MAP_HEIGHT, LEVELS, WEAPON_CONFIG, TANK_MODELS, OBSTACLE_HP, RIVER_HEIGHT } from '../constants';
 import { Tank, Projectile, Enemy, WeaponType, Particle, Obstacle, Battleship, Turret, PowerUp, FloatingText } from '../types';
 import { playShootSound, playExplosionSound, playImpactSound, playCollisionSound } from '../services/audioService';
-import { Pause, Play, LogOut, Zap, Skull } from 'lucide-react';
+import { Pause, Play, LogOut, Zap, Skull, Crosshair, ShieldAlert } from 'lucide-react';
 
 interface GameCanvasProps {
   onGameOver: (score: number, win: boolean) => void;
@@ -48,6 +47,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // Use ref for HUD updates to avoid re-rendering whole canvas on every tick
   const venomHudRef = useRef<{timer: number, cooldown: number}>({timer: 0, cooldown: 0});
   const [venomStatus, setVenomStatus] = useState({ active: false, timer: 0, cooldown: 0 });
+
+  // Mobile Control State References (to avoid re-renders)
+  const joystickRef = useRef<{
+      move: { active: boolean, x: number, y: number, originX: number, originY: number, currentX: number, currentY: number, id: number | null },
+      aim: { active: boolean, x: number, y: number, originX: number, originY: number, currentX: number, currentY: number, id: number | null },
+      isFiring: boolean
+  }>({
+      move: { active: false, x: 0, y: 0, originX: 0, originY: 0, currentX: 0, currentY: 0, id: null },
+      aim: { active: false, x: 0, y: 0, originX: 0, originY: 0, currentX: 0, currentY: 0, id: null },
+      isFiring: false
+  });
 
   // Game State Refs
   const gameState = useRef({
@@ -379,6 +389,103 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   };
   const handleMouseDown = () => { gameState.current.mouse.down = true; };
   const handleMouseUp = () => { gameState.current.mouse.down = false; };
+
+  // --- Touch Controls Logic ---
+  const handleTouchStart = (e: React.TouchEvent, type: 'move' | 'aim') => {
+      e.preventDefault(); // Prevent default touch behavior (scroll/zoom)
+      const touch = e.changedTouches[0];
+      // CRITICAL FIX: Use currentTarget to get the bounding box of the JOYSTICK CONTAINER, not the inner knob
+      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      // Touch coordinates relative to the container
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      
+      if (type === 'move') {
+          joystickRef.current.move = {
+              active: true,
+              id: touch.identifier,
+              originX: centerX, originY: centerY,
+              currentX: x, currentY: y,
+              x: (x - centerX) / (rect.width/2),
+              y: (y - centerY) / (rect.height/2)
+          };
+      } else {
+          joystickRef.current.aim = {
+              active: true,
+              id: touch.identifier,
+              originX: centerX, originY: centerY,
+              currentX: x, currentY: y,
+              x: (x - centerX) / (rect.width/2),
+              y: (y - centerY) / (rect.height/2)
+          };
+      }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, type: 'move' | 'aim') => {
+      e.preventDefault();
+      const j = type === 'move' ? joystickRef.current.move : joystickRef.current.aim;
+      if (!j.active) return;
+
+      for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === j.id) {
+              const touch = e.changedTouches[i];
+              // Ensure we reference the container
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+              
+              // Limit distance to radius
+              const dx = touch.clientX - rect.left - j.originX;
+              const dy = touch.clientY - rect.top - j.originY;
+              const dist = Math.hypot(dx, dy);
+              const maxDist = rect.width / 2;
+              
+              let finalX = dx;
+              let finalY = dy;
+              
+              if (dist > maxDist) {
+                  finalX = (dx / dist) * maxDist;
+                  finalY = (dy / dist) * maxDist;
+              }
+
+              if (type === 'move') {
+                   joystickRef.current.move.currentX = j.originX + finalX;
+                   joystickRef.current.move.currentY = j.originY + finalY;
+                   joystickRef.current.move.x = finalX / maxDist;
+                   joystickRef.current.move.y = finalY / maxDist;
+              } else {
+                   joystickRef.current.aim.currentX = j.originX + finalX;
+                   joystickRef.current.aim.currentY = j.originY + finalY;
+                   joystickRef.current.aim.x = finalX / maxDist;
+                   joystickRef.current.aim.y = finalY / maxDist;
+              }
+          }
+      }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent, type: 'move' | 'aim') => {
+      e.preventDefault();
+      const j = type === 'move' ? joystickRef.current.move : joystickRef.current.aim;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === j.id) {
+              if (type === 'move') {
+                  joystickRef.current.move = { ...joystickRef.current.move, active: false, x: 0, y: 0, currentX: j.originX, currentY: j.originY };
+              } else {
+                  joystickRef.current.aim = { ...joystickRef.current.aim, active: false, x: 0, y: 0, currentX: j.originX, currentY: j.originY };
+              }
+          }
+      }
+  };
+
+  const activateVenom = () => {
+     // Explicitly enable venom directly in game state to ensure it triggers even if keyup happens too fast
+     // or just simulate the key press
+     if (!gameState.current.player.venomState.active && gameState.current.player.venomState.cooldown <= 0) {
+        gameState.current.keys.v = true;
+        // Release key after a short delay to simulate a press
+        setTimeout(() => { gameState.current.keys.v = false; }, 200);
+     }
+  };
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -916,11 +1023,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (state.keys.s || state.keys.ArrowDown) dy += 1;
     if (state.keys.a || state.keys.ArrowLeft) dx -= 1;
     if (state.keys.d || state.keys.ArrowRight) dx += 1;
+    
+    // Mobile Joystick Override
+    if (joystickRef.current.move.active) {
+        dx = joystickRef.current.move.x;
+        dy = joystickRef.current.move.y;
+    }
 
     if (dx !== 0 || dy !== 0) {
+      // Normalize if both inputs active (clamped to speed later)
+      // Joystick is already -1 to 1. Keyboard is -1, 0, 1.
       const length = Math.sqrt(dx * dx + dy * dy);
-      const vx = (dx / length) * player.speed;
-      const vy = (dy / length) * player.speed;
+      // Cap length at 1 for joystick
+      const norm = length > 1 ? 1 : length;
+      
+      const vx = (dx / length) * player.speed * norm;
+      const vy = (dy / length) * player.speed * norm;
       
       const targetHullAngle = Math.atan2(dy, dx);
       player.rotation = targetHullAngle; 
@@ -1022,13 +1140,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     state.camera.y += (targetCamY - state.camera.y) * 0.1;
 
     // Aiming
-    const worldMouseX = state.mouse.x + state.camera.x;
-    const worldMouseY = state.mouse.y + state.camera.y;
-    player.turretRotation = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+    if (joystickRef.current.aim.active) {
+        player.turretRotation = Math.atan2(joystickRef.current.aim.y, joystickRef.current.aim.x);
+    } else {
+        const worldMouseX = state.mouse.x + state.camera.x;
+        const worldMouseY = state.mouse.y + state.camera.y;
+        player.turretRotation = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+    }
 
     // 2. Shooting
     if (player.cooldown > 0) player.cooldown--;
-    if ((state.mouse.down || state.keys.Space) && player.cooldown <= 0) {
+    
+    const isShooting = state.mouse.down || state.keys.Space || joystickRef.current.isFiring;
+
+    if (isShooting && player.cooldown <= 0) {
        const config = WEAPON_CONFIG[player.weapon];
        player.cooldown = config.cooldown;
        playShootSound(player.weapon);
@@ -1556,7 +1681,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [isPaused, loop]);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden touch-none">
+    <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden touch-none select-none">
       <canvas 
         ref={canvasRef} 
         width={canvasSize.width} 
@@ -1568,6 +1693,75 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         style={{ width: '100%', height: '100%' }}
       />
       
+      {/* Mobile Virtual Controls Layer (Visible on touch screens/smaller screens) */}
+      <div className="absolute inset-0 pointer-events-none lg:hidden">
+          {/* Left Joystick Zone (Movement) */}
+          <div 
+            className="absolute bottom-8 left-8 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
+            onTouchStart={(e) => handleTouchStart(e, 'move')}
+            onTouchMove={(e) => handleTouchMove(e, 'move')}
+            onTouchEnd={(e) => handleTouchEnd(e, 'move')}
+          >
+              <div 
+                className="w-12 h-12 rounded-full bg-white/50 shadow-lg"
+                style={{ 
+                    transform: `translate(${joystickRef.current.move.currentX - joystickRef.current.move.originX}px, ${joystickRef.current.move.currentY - joystickRef.current.move.originY}px)`,
+                    transition: joystickRef.current.move.active ? 'none' : 'transform 0.1s ease-out'
+                }}
+              ></div>
+          </div>
+
+           {/* Right Joystick Zone (Aim) */}
+           <div 
+            className="absolute bottom-8 right-32 w-32 h-32 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm pointer-events-auto flex items-center justify-center"
+            onTouchStart={(e) => handleTouchStart(e, 'aim')}
+            onTouchMove={(e) => handleTouchMove(e, 'aim')}
+            onTouchEnd={(e) => handleTouchEnd(e, 'aim')}
+          >
+              <Crosshair className="absolute text-white/30 w-16 h-16" />
+              <div 
+                className="w-12 h-12 rounded-full bg-red-500/50 shadow-lg z-10"
+                style={{ 
+                    transform: `translate(${joystickRef.current.aim.currentX - joystickRef.current.aim.originX}px, ${joystickRef.current.aim.currentY - joystickRef.current.aim.originY}px)`,
+                    transition: joystickRef.current.aim.active ? 'none' : 'transform 0.1s ease-out'
+                }}
+              ></div>
+          </div>
+
+          {/* Fire Button - Bottom Right Corner */}
+          <div className="absolute bottom-10 right-4 pointer-events-auto">
+               <button 
+                 className={`w-20 h-20 rounded-full border-4 shadow-lg transition-transform active:scale-90 flex items-center justify-center ${joystickRef.current.isFiring ? 'bg-red-500 border-red-300' : 'bg-red-600/80 border-red-400'}`}
+                 onTouchStart={(e) => { e.preventDefault(); joystickRef.current.isFiring = true; }}
+                 onTouchEnd={(e) => { e.preventDefault(); joystickRef.current.isFiring = false; }}
+               >
+                   <div className="w-12 h-12 rounded-full bg-white/20"></div>
+               </button>
+          </div>
+
+          {/* Venom Button - Above Fire Button */}
+          <div className="absolute bottom-36 right-6 pointer-events-auto">
+               <button 
+                 className={`w-16 h-16 rounded-full border-2 shadow-lg transition-transform active:scale-90 flex items-center justify-center ${venomStatus.active ? 'bg-[#39FF14] border-white animate-pulse' : (venomStatus.cooldown > 0 ? 'bg-gray-600 border-gray-500 opacity-50' : 'bg-green-700/80 border-green-500')}`}
+                 onTouchStart={(e) => { e.preventDefault(); activateVenom(); }}
+               >
+                   <ShieldAlert className={`w-8 h-8 ${venomStatus.active ? 'text-black' : 'text-white'}`} />
+               </button>
+          </div>
+
+          {/* Shockwave Button - Above Left Joystick */}
+          <div className="absolute bottom-40 left-10 pointer-events-auto">
+             <button 
+                onClick={triggerShockwave}
+                disabled={shockwaves <= 0 || isPaused}
+                className={`w-16 h-16 rounded-full flex flex-col items-center justify-center shadow-lg border-2 transition-transform active:scale-95 ${shockwaves > 0 ? 'bg-yellow-600 hover:bg-yellow-500 border-yellow-400 text-white' : 'bg-gray-700 border-gray-600 text-gray-400 grayscale'}`}
+            >
+                <Zap size={24} className={shockwaves > 0 ? "animate-pulse" : ""} />
+                <span className="text-xs font-bold">{shockwaves}</span>
+            </button>
+          </div>
+      </div>
+
       {/* Pause Overlay */}
       {isPaused && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm z-20">
@@ -1590,8 +1784,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           </button>
       </div>
 
-      {/* Shockwave Button */}
-      <div className="absolute bottom-4 right-4 pointer-events-auto">
+      {/* Shockwave Button Desktop (Hidden on Mobile) */}
+      <div className="absolute bottom-4 right-4 pointer-events-auto hidden lg:block">
           <button 
             onClick={triggerShockwave}
             disabled={shockwaves <= 0 || isPaused}
@@ -1603,52 +1797,80 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       </div>
 
       <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none">
-        <div className="flex flex-col gap-4">
-          {/* HP Bar */}
-          <div className="bg-gray-900/80 p-2 rounded border border-green-800 w-64 backdrop-blur-sm">
-             <div className="flex justify-between text-xs text-green-500 mb-1 uppercase font-mono">
-                <span>装甲状态</span> <span>{Math.max(0, Math.ceil(hp))}</span>
-            </div>
-            <div className="h-3 bg-gray-800 rounded-sm overflow-hidden">
-                <div className={`h-full ${hp < 30 ? 'bg-red-600 animate-pulse' : 'bg-green-600'}`} style={{ width: `${Math.max(0, (hp / gameState.current.player.maxHp) * 100)}%` }}></div>
-            </div>
-          </div>
+        <div className="flex flex-col gap-2 md:gap-4">
           
-          {/* Venom Cannon Status */}
-          <div className={`bg-gray-900/80 p-2 rounded border w-64 backdrop-blur-sm transition-colors ${venomStatus.active ? 'border-[#39FF14] shadow-[0_0_10px_#39FF14]' : 'border-gray-700'}`}>
-             <div className="flex justify-between text-xs mb-1 uppercase font-mono font-bold">
-                <span className={venomStatus.active ? "text-[#39FF14]" : "text-gray-400"}>
-                    {venomStatus.active ? '⚠ 毒液炮激活 ⚠' : '毒液系统 [V]'}
-                </span> 
-                <span className="text-gray-300">
-                    {venomStatus.active ? `${Math.ceil(venomStatus.timer/60)}s` : (venomStatus.cooldown > 0 ? `CD: ${Math.ceil(venomStatus.cooldown/60)}s` : 'READY')}
-                </span>
-            </div>
-            <div className="h-3 bg-gray-800 rounded-sm overflow-hidden">
-                {venomStatus.active ? (
-                     <div className="h-full bg-[#39FF14]" style={{ width: `${(venomStatus.timer / 600) * 100}%` }}></div>
-                ) : (
-                     <div className={`h-full ${venomStatus.cooldown > 0 ? 'bg-red-900' : 'bg-gray-600'}`} style={{ width: venomStatus.cooldown > 0 ? `${100 - (venomStatus.cooldown / 600) * 100}%` : '100%' }}></div>
-                )}
-            </div>
-          </div>
-
-          {/* Battleship HP */}
-          {!gameState.current.battleship.sunk && (
-              <div className="bg-gray-900/80 p-2 rounded border border-red-900 w-64 backdrop-blur-sm">
-                <div className="flex justify-between text-xs text-red-500 mb-1 uppercase font-mono">
-                    <span>⚠ 敌方战舰 ⚠</span> <span>{shipHp}%</span>
+          {/* Desktop HUD: Bars (Hidden on small/vertical screens) */}
+          <div className="hidden lg:block">
+              {/* HP Bar */}
+              <div className="bg-gray-900/80 p-2 rounded border border-green-800 w-64 backdrop-blur-sm mb-4">
+                <div className="flex justify-between text-xs text-green-500 mb-1 uppercase font-mono">
+                    <span>装甲状态</span> <span>{Math.max(0, Math.ceil(hp))}</span>
                 </div>
                 <div className="h-3 bg-gray-800 rounded-sm overflow-hidden">
-                    <div className="h-full bg-red-600" style={{ width: `${shipHp}%` }}></div>
+                    <div className={`h-full ${hp < 30 ? 'bg-red-600 animate-pulse' : 'bg-green-600'}`} style={{ width: `${Math.max(0, (hp / gameState.current.player.maxHp) * 100)}%` }}></div>
                 </div>
               </div>
-          )}
+              
+              {/* Venom Cannon Status */}
+              <div className={`bg-gray-900/80 p-2 rounded border w-64 backdrop-blur-sm transition-colors mb-4 ${venomStatus.active ? 'border-[#39FF14] shadow-[0_0_10px_#39FF14]' : 'border-gray-700'}`}>
+                <div className="flex justify-between text-xs mb-1 uppercase font-mono font-bold">
+                    <span className={venomStatus.active ? "text-[#39FF14]" : "text-gray-400"}>
+                        {venomStatus.active ? '⚠ 毒液炮激活 ⚠' : '毒液系统 [V]'}
+                    </span> 
+                    <span className="text-gray-300">
+                        {venomStatus.active ? `${Math.ceil(venomStatus.timer/60)}s` : (venomStatus.cooldown > 0 ? `CD: ${Math.ceil(venomStatus.cooldown/60)}s` : 'READY')}
+                    </span>
+                </div>
+                <div className="h-3 bg-gray-800 rounded-sm overflow-hidden">
+                    {venomStatus.active ? (
+                        <div className="h-full bg-[#39FF14]" style={{ width: `${(venomStatus.timer / 600) * 100}%` }}></div>
+                    ) : (
+                        <div className={`h-full ${venomStatus.cooldown > 0 ? 'bg-red-900' : 'bg-gray-600'}`} style={{ width: venomStatus.cooldown > 0 ? `${100 - (venomStatus.cooldown / 600) * 100}%` : '100%' }}></div>
+                    )}
+                </div>
+              </div>
+
+              {/* Battleship HP */}
+              {!gameState.current.battleship.sunk && (
+                  <div className="bg-gray-900/80 p-2 rounded border border-red-900 w-64 backdrop-blur-sm">
+                    <div className="flex justify-between text-xs text-red-500 mb-1 uppercase font-mono">
+                        <span>⚠ 敌方战舰 ⚠</span> <span>{shipHp}%</span>
+                    </div>
+                    <div className="h-3 bg-gray-800 rounded-sm overflow-hidden">
+                        <div className="h-full bg-red-600" style={{ width: `${shipHp}%` }}></div>
+                    </div>
+                  </div>
+              )}
+          </div>
+
+          {/* Mobile HUD: Compact Text (Visible only on small/vertical screens) */}
+          <div className="lg:hidden flex flex-col gap-1 items-start bg-black/60 p-3 rounded backdrop-blur-md border border-white/10">
+              <div className={`text-base font-bold font-mono ${hp < 30 ? 'text-red-500 animate-pulse' : 'text-green-400'}`}>
+                  HP: {Math.max(0, Math.ceil(hp))}%
+              </div>
+              
+              {venomStatus.active ? (
+                  <div className="text-base font-bold font-mono text-[#39FF14] animate-pulse">
+                      毒液: {Math.ceil(venomStatus.timer/60)}s
+                  </div>
+              ) : (
+                  <div className={`text-sm font-bold font-mono ${venomStatus.cooldown > 0 ? 'text-gray-500' : 'text-green-600'}`}>
+                      毒液: {venomStatus.cooldown > 0 ? `CD ${Math.ceil(venomStatus.cooldown/60)}` : '就绪'}
+                  </div>
+              )}
+
+              {!gameState.current.battleship.sunk && (
+                  <div className="text-sm font-bold font-mono text-red-500">
+                      BOSS: {shipHp}%
+                  </div>
+              )}
+          </div>
+
         </div>
 
         <div className="flex flex-col items-end pr-14"> 
-           <div className="text-3xl font-black text-yellow-500 font-mono">{score.toString().padStart(6, '0')}</div>
-           <div className="text-lg font-bold text-gray-400 uppercase">区域 {currentLevel} / {LEVELS.length}</div>
+           <div className="text-2xl md:text-3xl font-black text-yellow-500 font-mono">{score.toString().padStart(6, '0')}</div>
+           <div className="text-xs md:text-lg font-bold text-gray-400 uppercase">区域 {currentLevel} / {LEVELS.length}</div>
         </div>
       </div>
     </div>

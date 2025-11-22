@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import GameCanvas from './components/GameCanvas';
 import { WeaponType } from './types';
@@ -25,13 +24,8 @@ const App: React.FC = () => {
 
   // Load Author Avatar on Mount
   useEffect(() => {
-      const loadAvatar = async () => {
-          // Simple check to avoid re-fetching if we already have it (though component mount resets state)
-          // In a real app we might cache this in localStorage to save API calls.
-          const avatar = await generateAuthorAvatar();
-          if (avatar) setAuthorAvatar(avatar);
-      };
-      loadAvatar();
+      // Use static avatar as requested
+      setAuthorAvatar('https://pic1.imgdb.cn/item/692165673203f7be00209450.png');
   }, []);
 
   const startGame = () => {
@@ -216,11 +210,11 @@ const App: React.FC = () => {
         </div>
 
         {/* HUD / Sidebar - Bottom on mobile, Right on desktop */}
-        <div className="w-full md:w-[300px] flex-none bg-[#222] border-t md:border-t-0 md:border-l border-gray-700 flex flex-col gap-2 md:gap-4 p-2 md:p-4 order-2 md:order-2 z-10 shadow-xl">
-          <h3 className="text-gray-400 font-bold text-center border-b border-gray-700 pb-2 tracking-widest text-sm hidden md:block">作战参数</h3>
+        <div className="w-full md:w-[300px] flex-none bg-[#222] border-t md:border-t-0 md:border-l border-gray-700 flex flex-col gap-2 md:gap-4 p-2 md:p-4 order-2 md:order-2 z-10 shadow-xl hidden lg:flex">
+          <h3 className="text-gray-400 font-bold text-center border-b border-gray-700 pb-2 tracking-widest text-sm">作战参数</h3>
           
-          <div className="flex md:flex-col gap-2 md:gap-4 overflow-x-auto md:overflow-visible">
-              <div className="bg-[#1a1a1a] p-3 rounded border border-gray-800 relative overflow-hidden min-w-[150px] md:min-w-0 flex-1 md:flex-none">
+          <div className="flex flex-col gap-4">
+              <div className="bg-[#1a1a1a] p-3 rounded border border-gray-800 relative overflow-hidden">
                 <img 
                 src={tank.imageUrl} 
                 className="absolute inset-0 w-full h-full object-cover opacity-20" 
@@ -243,14 +237,14 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-[#1a1a1a] p-3 rounded border border-gray-800 min-w-[150px] md:min-w-0 flex-1 md:flex-none">
+              <div className="bg-[#1a1a1a] p-3 rounded border border-gray-800">
                 <p className="text-xs text-gray-500 uppercase mb-1">武器系统</p>
                 <p className="text-yellow-500 font-bold text-sm whitespace-nowrap">{weaponName}</p>
               </div>
           </div>
 
           {/* Minimap Display Area */}
-          <div className="bg-[#1a1a1a] p-1 rounded border border-red-900/50 relative aspect-[4/3] shadow-inner hidden md:block">
+          <div className="bg-[#1a1a1a] p-1 rounded border border-red-900/50 relative aspect-[4/3] shadow-inner">
              <p className="absolute top-2 left-2 text-[10px] text-gray-400 uppercase font-mono z-10 pointer-events-none bg-black/50 px-1 rounded">TACTICAL RADAR</p>
              <canvas 
                ref={minimapRef} 
@@ -268,7 +262,7 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          <div className="bg-[#1a1a1a] p-4 rounded-sm mt-auto border border-gray-800 hidden md:block">
+          <div className="bg-[#1a1a1a] p-4 rounded-sm mt-auto border border-gray-800">
             <h4 className="text-yellow-700 text-xs font-bold mb-2 uppercase tracking-widest">任务目标</h4>
             <p className="text-gray-400 text-xs font-mono mb-2">1. 摧毁敌方装甲单位</p>
             <p className="text-red-400 text-xs font-mono font-bold animate-pulse">
