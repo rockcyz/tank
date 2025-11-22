@@ -36,6 +36,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const requestRef = useRef<number>(0); // Track animation frame ID
+  const lastFrameTimeRef = useRef<number>(0); // Track last frame timestamp for FPS throttling
   
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
@@ -219,6 +220,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     state.isRunning = true;
     state.lastCollisionTime = 0;
     
+    // Reset frame time to prevent jump
+    lastFrameTimeRef.current = 0;
+
     setScore(0);
     setShockwaves(2);
     setIsPaused(false);
@@ -973,8 +977,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return (r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y);
   };
 
-  const loop = useCallback(() => {
+  const loop = useCallback((timestamp: number) => {
     if (!gameState.current.isRunning || !canvasRef.current) return;
+
+    // --- FPS Throttling ---
+    if (!lastFrameTimeRef.current) {
+        lastFrameTimeRef.current = timestamp;
+    }
+    const elapsed = timestamp - lastFrameTimeRef.current;
+    const fpsInterval = 1000 / 60; // Target 60 FPS
+
+    if (elapsed < fpsInterval) {
+        requestRef.current = requestAnimationFrame(loop);
+        return;
+    }
+    // Adjust lastFrameTime to target 60 FPS interval
+    // We use the modulo to account for the slight overshoot
+    lastFrameTimeRef.current = timestamp - (elapsed % fpsInterval);
+    // -----------------------
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
