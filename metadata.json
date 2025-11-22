@@ -1,0 +1,5 @@
+{
+  "name": "天蝎坦克指挥官",
+  "description": "一款基于Gemini图像识别的坦克对战游戏。上传你的坦克设计图，在真实的战场环境中驾驶天蝎号移动火炮，对抗敌军装甲军团。",
+  "requestFramePermissions": []
+}
