@@ -244,7 +244,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     state.player.modelId = selectedTankId;
     state.player.maxHp = 100 + (tankConfig.stats.armor * 20);
     state.player.hp = state.player.maxHp;
-    state.player.speed = 2 + (tankConfig.stats.speed * 0.4);
+
+    // Mobile Speed Adjustment
+    const isMobile = window.innerWidth < 1000;
+    const speedMult = isMobile ? 0.4 : 1.0;
+
+    state.player.speed = (2 + (tankConfig.stats.speed * 0.4)) * speedMult;
     state.player.weapon = tankConfig.weapon; 
     state.player.originalWeapon = tankConfig.weapon;
     state.player.damageBoost = 1.0;
@@ -1045,7 +1050,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // Check Unit Collision (Player vs Enemies)
       const checkUnitCollision = (nextX: number, nextY: number, isPlayer: boolean) => {
-          const unitRadius = 35; // Approximate radius for collision
+          const unitRadius = 25; // Reduced radius to prevent getting stuck
           
           // vs Enemies
           for(const e of state.enemies) {
@@ -1299,6 +1304,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           const levelScaler = 1 + (currentLevel * 0.1);
           eHp *= levelScaler;
 
+          // Mobile Speed Adjustment
+          const isMobile = window.innerWidth < 1000;
+          const speedMult = isMobile ? 0.4 : 1.0;
+          eSpeed *= speedMult;
+
           state.enemies.push({
             id: Math.random().toString(),
             x: ex, y: ey, width: eSize, height: eSize, rotation: 0, color: 'red', active: true,
@@ -1314,36 +1324,43 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
       enemy.rotation = angle; 
       
-      const nextEx = enemy.x + Math.cos(angle) * enemy.speed;
-      const nextEy = enemy.y + Math.sin(angle) * enemy.speed;
-
-      let canMove = true;
-      const eRect = { x: nextEx - enemy.width/2, y: nextEy - enemy.height/2, w: enemy.width, h: enemy.height };
+      const distToPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
       
-      // Obstacle collision
-      for(const obs of state.obstacles) {
-          if (!obs.active || (obs.deathTimer && obs.deathTimer > 0)) continue;
-           if (checkRectCollision(eRect, { x: obs.x, y: obs.y, w: obs.width, h: obs.height })) { canMove = false; break; }
-      }
-      // Unit vs Unit collision for Enemies
-      if (canMove) {
-          // Check vs Player
-          if (Math.hypot(nextEx - player.x, nextEy - player.y) < (enemy.width/2 + 30)) canMove = false;
-          
-          // Check vs other Enemies
-          for(let j=0; j<state.enemies.length; j++) {
-              if (idx === j) continue;
-              const other = state.enemies[j];
-              if (!other.active) continue;
-              if (Math.hypot(nextEx - other.x, nextEy - other.y) < (enemy.width/2 + other.width/2)) {
-                  canMove = false; break;
-              }
-          }
-      }
+      // Only move if far enough away (prevent hugging)
+      const minDistance = 250; // Increased distance to prevent crowding
 
-      if (nextEy < RIVER_HEIGHT) canMove = false;
+      if (distToPlayer > minDistance) {
+        const nextEx = enemy.x + Math.cos(angle) * enemy.speed;
+        const nextEy = enemy.y + Math.sin(angle) * enemy.speed;
 
-      if(canMove) { enemy.x = nextEx; enemy.y = nextEy; }
+        let canMove = true;
+        const eRect = { x: nextEx - enemy.width/2, y: nextEy - enemy.height/2, w: enemy.width, h: enemy.height };
+        
+        // Obstacle collision
+        for(const obs of state.obstacles) {
+            if (!obs.active || (obs.deathTimer && obs.deathTimer > 0)) continue;
+            if (checkRectCollision(eRect, { x: obs.x, y: obs.y, w: obs.width, h: obs.height })) { canMove = false; break; }
+        }
+        // Unit vs Unit collision for Enemies
+        if (canMove) {
+            // Check vs Player
+            if (Math.hypot(nextEx - player.x, nextEy - player.y) < (enemy.width/2 + 30)) canMove = false;
+            
+            // Check vs other Enemies
+            for(let j=0; j<state.enemies.length; j++) {
+                if (idx === j) continue;
+                const other = state.enemies[j];
+                if (!other.active) continue;
+                if (Math.hypot(nextEx - other.x, nextEy - other.y) < (enemy.width/2 + other.width/2)) {
+                    canMove = false; break;
+                }
+            }
+        }
+
+        if (nextEy < RIVER_HEIGHT) canMove = false;
+
+        if(canMove) { enemy.x = nextEx; enemy.y = nextEy; }
+      }
 
       if (enemy.cooldown > 0) enemy.cooldown--;
       
